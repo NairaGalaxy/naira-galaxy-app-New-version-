@@ -28,12 +28,19 @@ router.get("/balance", requireAuth, async (req, res) => {
   }
 });
 
+const MIN_WITHDRAWAL = 1600;
+
 router.post("/withdraw", requireAuth, async (req, res) => {
   const { userId } = (req as any).user;
   const { amount, bankName, accountNumber, accountName } = req.body;
 
   if (!amount || amount <= 0 || !bankName || !accountNumber || !accountName) {
     res.status(400).json({ error: "All withdrawal fields are required" });
+    return;
+  }
+
+  if (amount < MIN_WITHDRAWAL) {
+    res.status(400).json({ error: `Minimum withdrawal is ₦${MIN_WITHDRAWAL} coins` });
     return;
   }
 

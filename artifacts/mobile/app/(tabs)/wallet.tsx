@@ -16,6 +16,7 @@ import { useAuth } from "@/context/AuthContext";
 import Colors from "@/constants/colors";
 
 const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}`;
+const MIN_WITHDRAWAL = 1600;
 
 interface Withdrawal {
   id: number;
@@ -89,6 +90,10 @@ export default function WalletScreen() {
     const numAmount = parseFloat(amount);
     if (isNaN(numAmount) || numAmount <= 0) {
       setFormError("Enter a valid amount");
+      return;
+    }
+    if (numAmount < MIN_WITHDRAWAL) {
+      setFormError(`Minimum withdrawal is ₦${MIN_WITHDRAWAL.toLocaleString()} coins`);
       return;
     }
     if (numAmount > (balance?.availableBalance ?? 0)) {
@@ -192,12 +197,13 @@ export default function WalletScreen() {
                 <Text style={styles.inputLabel}>Amount (₦)</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder={`Max: ₦${balance?.availableBalance ?? 0}`}
+                  placeholder={`Min: ₦1,600 · Max: ₦${(balance?.availableBalance ?? 0).toLocaleString()}`}
                   placeholderTextColor={Colors.textMuted}
                   value={amount}
                   onChangeText={setAmount}
                   keyboardType="numeric"
                 />
+                <Text style={styles.inputHint}>Minimum withdrawal: ₦1,600 coins</Text>
               </View>
 
               <View style={styles.inputWrapper}>
@@ -349,6 +355,7 @@ const styles = StyleSheet.create({
   errorText: { color: Colors.error, fontSize: 13, fontFamily: "Inter_500Medium", flex: 1 },
   inputWrapper: { gap: 6 },
   inputLabel: { fontSize: 12, color: Colors.textSecondary, fontFamily: "Inter_500Medium" },
+  inputHint: { fontSize: 11, color: Colors.textMuted, fontFamily: "Inter_400Regular", marginTop: 4 },
   input: {
     backgroundColor: Colors.surfaceElevated,
     borderRadius: 10,
