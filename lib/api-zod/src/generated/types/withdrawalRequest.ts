@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HealthStatus {
-  status: string;
+export interface WithdrawalRequest {
+  amount: number;
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
 }
