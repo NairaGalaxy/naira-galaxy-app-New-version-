@@ -1,0 +1,480 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: Naira Galaxy API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: auth
+    description: Authentication
+  - name: mining
+    description: Mining operations
+  - name: wallet
+    description: Wallet and withdrawals
+  - name: admin
+    description: Admin operations
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /user/profile:
+    get:
+      operationId: getProfile
+      tags: [auth]
+      summary: Get current user profile
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+
+  /mining/today:
+    get:
+      operationId: getTodayMining
+      tags: [mining]
+      summary: Get today mining status
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Today mining status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MiningStatus"
+
+  /mining/complete:
+    post:
+      operationId: completeMining
+      tags: [mining]
+      summary: Record a completed mining button
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteMiningRequest"
+      responses:
+        "200":
+          description: Mining recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MiningResult"
+        "400":
+          description: Daily limit reached or already mined
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /wallet/balance:
+    get:
+      operationId: getBalance
+      tags: [wallet]
+      summary: Get wallet balance
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Wallet balance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletBalance"
+
+  /wallet/withdraw:
+    post:
+      operationId: requestWithdrawal
+      tags: [wallet]
+      summary: Request a withdrawal
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WithdrawalRequest"
+      responses:
+        "201":
+          description: Withdrawal requested
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WithdrawalResponse"
+        "400":
+          description: Insufficient balance or bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /wallet/withdrawals:
+    get:
+      operationId: getWithdrawals
+      tags: [wallet]
+      summary: Get user withdrawal history
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Withdrawal history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WithdrawalItem"
+
+  /admin/users:
+    get:
+      operationId: adminGetUsers
+      tags: [admin]
+      summary: Get all users
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: All users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminUser"
+
+  /admin/withdrawals:
+    get:
+      operationId: adminGetWithdrawals
+      tags: [admin]
+      summary: Get all withdrawal requests
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: All withdrawals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminWithdrawal"
+
+  /admin/withdrawals/{id}/status:
+    patch:
+      operationId: adminUpdateWithdrawalStatus
+      tags: [admin]
+      summary: Update withdrawal status
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWithdrawalStatusRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WithdrawalItem"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required: [status]
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    RegisterRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+        fullName:
+          type: string
+      required: [username, email, password, fullName]
+
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+      required: [email, password]
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/UserProfile"
+      required: [token, user]
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        email:
+          type: string
+        fullName:
+          type: string
+        isAdmin:
+          type: boolean
+        totalCoins:
+          type: number
+        createdAt:
+          type: string
+      required: [id, username, email, fullName, isAdmin, totalCoins, createdAt]
+
+    MiningStatus:
+      type: object
+      properties:
+        date:
+          type: string
+        minedButtons:
+          type: array
+          items:
+            type: integer
+        coinsEarnedToday:
+          type: number
+        dailyLimit:
+          type: number
+        canMineMore:
+          type: boolean
+      required: [date, minedButtons, coinsEarnedToday, dailyLimit, canMineMore]
+
+    CompleteMiningRequest:
+      type: object
+      properties:
+        buttonIndex:
+          type: integer
+      required: [buttonIndex]
+
+    MiningResult:
+      type: object
+      properties:
+        coinsEarned:
+          type: number
+        totalCoinsToday:
+          type: number
+        totalCoins:
+          type: number
+        minedButtons:
+          type: array
+          items:
+            type: integer
+        canMineMore:
+          type: boolean
+      required: [coinsEarned, totalCoinsToday, totalCoins, minedButtons, canMineMore]
+
+    WalletBalance:
+      type: object
+      properties:
+        totalCoins:
+          type: number
+        pendingWithdrawal:
+          type: number
+        availableBalance:
+          type: number
+      required: [totalCoins, pendingWithdrawal, availableBalance]
+
+    WithdrawalRequest:
+      type: object
+      properties:
+        amount:
+          type: number
+        bankName:
+          type: string
+        accountNumber:
+          type: string
+        accountName:
+          type: string
+      required: [amount, bankName, accountNumber, accountName]
+
+    WithdrawalResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+        message:
+          type: string
+      required: [id, status, message]
+
+    WithdrawalItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        amount:
+          type: number
+        bankName:
+          type: string
+        accountNumber:
+          type: string
+        accountName:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+      required: [id, amount, bankName, accountNumber, accountName, status, createdAt]
+
+    AdminUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        email:
+          type: string
+        fullName:
+          type: string
+        totalCoins:
+          type: number
+        createdAt:
+          type: string
+        lastMiningDate:
+          type: string
+        todayCoins:
+          type: number
+      required: [id, username, email, fullName, totalCoins, createdAt]
+
+    AdminWithdrawal:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        username:
+          type: string
+        fullName:
+          type: string
+        amount:
+          type: number
+        bankName:
+          type: string
+        accountNumber:
+          type: string
+        accountName:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+      required: [id, userId, username, fullName, amount, bankName, accountNumber, accountName, status, createdAt]
+
+    UpdateWithdrawalStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [pending, approved, rejected, paid]
+      required: [status]
