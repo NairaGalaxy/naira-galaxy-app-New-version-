@@ -53,5 +53,9 @@
     "typescript": "~5.9.2",
     "zod": "^3.22.4",
     "zod-validation-error": "^3.4.0"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5"
   }
 }
