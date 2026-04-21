@@ -2,7 +2,9 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { setBaseUrl, setAuthTokenGetter } from "@workspace/api-client-react";
 
-const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}`;
+// ✅ FIXED: Use your Render backend directly
+const API_BASE = "https://naira-galaxy-app-new-version.onrender.com";
+
 setBaseUrl(API_BASE);
 
 export interface UserProfile {
@@ -41,6 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         currentToken = stored;
         setToken(stored);
         setAuthTokenGetter(() => currentToken);
+
         fetch(`${API_BASE}/api/auth/profile`, {
           headers: { Authorization: `Bearer ${stored}` },
         })
@@ -62,8 +65,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
+
     const data = await res.json();
+
     if (!res.ok) throw new Error(data.error ?? "Login failed");
+
     await AsyncStorage.setItem("naira_token", data.token);
     setToken(data.token);
     setAuthTokenGetter(() => data.token);
@@ -76,8 +82,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, email, password, fullName }),
     });
+
     const data = await res.json();
+
     if (!res.ok) throw new Error(data.error ?? "Registration failed");
+
     await AsyncStorage.setItem("naira_token", data.token);
     setToken(data.token);
     setAuthTokenGetter(() => data.token);
@@ -92,11 +101,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const updateUserCoins = (totalCoins: number) => {
-    setUser((prev) => prev ? { ...prev, totalCoins } : prev);
+    setUser((prev) => (prev ? { ...prev, totalCoins } : prev));
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, register, logout, updateUserCoins }}>
+    <AuthContext.Provider
+      value={{ user, token, isLoading, login, register, logout, updateUserCoins }}
+    >
       {children}
     </AuthContext.Provider>
   );
@@ -106,4 +117,4 @@ export function useAuth(): AuthContextType {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
-}
+                            }
