@@ -19,8 +19,18 @@ function generateToken(user) {
   return Buffer.from(user.email).toString("base64");
 }
 
+function getUserFromToken(req) {
+  const auth = req.headers.authorization;
+  if (!auth) return null;
+
+  const token = auth.split(" ")[1];
+  const email = Buffer.from(token, "base64").toString("ascii");
+
+  return users.find(u => u.email === email);
+}
+
 // =========================
-// REGISTER
+// AUTH - REGISTER
 // =========================
 app.post("/api/auth/register", (req, res) => {
   const { username, email, password, fullName } = req.body;
@@ -29,8 +39,7 @@ app.post("/api/auth/register", (req, res) => {
     return res.status(400).json({ error: "Missing fields" });
   }
 
-  const userExists = users.find(u => u.email === email);
-  if (userExists) {
+  if (users.find(u => u.email === email)) {
     return res.status(400).json({ error: "User already exists" });
   }
 
@@ -47,16 +56,14 @@ app.post("/api/auth/register", (req, res) => {
 
   users.push(newUser);
 
-  const token = generateToken(newUser);
-
   res.json({
-    token,
+    token: generateToken(newUser),
     user: newUser
   });
 });
 
 // =========================
-// LOGIN
+// AUTH - LOGIN
 // =========================
 app.post("/api/auth/login", (req, res) => {
   const { email, password } = req.body;
@@ -69,56 +76,44 @@ app.post("/api/auth/login", (req, res) => {
     return res.status(401).json({ error: "Invalid credentials" });
   }
 
-  const token = generateToken(user);
-
   res.json({
-    token,
+    token: generateToken(user),
     user
   });
 });
 
 // =========================
-// PROFILE
+// AUTH - PROFILE
 // =========================
 app.get("/api/auth/profile", (req, res) => {
-  const auth = req.headers.authorization;
-
-  if (!auth) {
-    return res.status(401).json({ error: "No token" });
-  }
-
-  const token = auth.split(" ")[1];
-  const email = Buffer.from(token, "base64").toString("ascii");
-
-  const user = users.find(u => u.email === email);
+  const user = getUserFromToken(req);
 
   if (!user) {
-    return res.status(404).json({ error: "User not found" });
+    return res.status(401).json({ error: "Unauthorized" });
   }
 
   res.json(user);
 });
 
 // =========================
-// MINE COINS 🔥 NEW
+// MINE COINS
 // =========================
 app.post("/api/mine", (req, res) => {
-  const { email, amount } = req.body;
-
-  if (!email || !amount) {
-    return res.status(400).json({ error: "Missing mining data" });
-  }
-
-  const user = users.find(u => u.email === email);
+  const user = getUserFromToken(req);
+  const { amount } = req.body;
 
   if (!user) {
-    return res.status(404).json({ error: "User not found" });
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  if (!amount) {
+    return res.status(400).json({ error: "Missing amount" });
   }
 
   user.totalCoins += amount;
 
   miningLogs.push({
-    email,
+    email: user.email,
     amount,
     date: new Date().toISOString()
   });
@@ -130,15 +125,56 @@ app.post("/api/mine", (req, res) => {
 });
 
 // =========================
-// WITHDRAW
+// WALLET - BALANCE
 // =========================
-app.post("/api/withdraw", (req, res) => {
-  const { email, amount } = req.body;
-
-  const user = users.find(u => u.email === email);
+app.get("/api/wallet/balance", (req, res) => {
+  const user = getUserFromToken(req);
 
   if (!user) {
-    return res.status(404).json({ error: "User not found" });
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const pending = withdrawals
+    .filter(w => w.email === user.email && w.status === "pending")
+    .reduce((sum, w) => sum + w.amount, 0);
+
+  res.json({
+    totalCoins: user.totalCoins,
+    pendingWithdrawal: pending,
+    availableBalance: user.totalCoins - pending
+  });
+});
+
+// =========================
+// WALLET - HISTORY
+// =========================
+app.get("/api/wallet/withdrawals", (req, res) => {
+  const user = getUserFromToken(req);
+
+  if (!user) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const userWithdrawals = withdrawals.filter(
+    w => w.email === user.email
+  );
+
+  res.json(userWithdrawals);
+});
+
+// =========================
+// WALLET - WITHDRAW
+// =========================
+app.post("/api/wallet/withdraw", (req, res) => {
+  const user = getUserFromToken(req);
+  const { amount, bankName, accountNumber, accountName } = req.body;
+
+  if (!user) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  if (!amount || amount <= 0) {
+    return res.status(400).json({ error: "Invalid amount" });
   }
 
   if (user.totalCoins < amount) {
@@ -147,14 +183,23 @@ app.post("/api/withdraw", (req, res) => {
 
   user.totalCoins -= amount;
 
-  withdrawals.push({
-    email,
+  const newWithdrawal = {
+    id: Date.now(),
+    email: user.email,
     amount,
+    bankName,
+    accountNumber,
+    accountName,
     status: "pending",
-    date: new Date().toISOString()
-  });
+    createdAt: new Date().toISOString()
+  };
 
-  res.json({ message: "Withdrawal request submitted" });
+  withdrawals.push(newWithdrawal);
+
+  res.json({
+    message: "Withdrawal request submitted",
+    withdrawal: newWithdrawal
+  });
 });
 
 // =========================
