@@ -5,11 +5,16 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// =========================
 // TEMP DATABASE
+// =========================
 let users = [];
 let withdrawals = [];
+let miningLogs = [];
 
-// SIMPLE TOKEN (for now)
+// =========================
+// SIMPLE TOKEN
+// =========================
 function generateToken(user) {
   return Buffer.from(user.email).toString("base64");
 }
@@ -95,14 +100,57 @@ app.get("/api/auth/profile", (req, res) => {
 });
 
 // =========================
+// MINE COINS 🔥 NEW
+// =========================
+app.post("/api/mine", (req, res) => {
+  const { email, amount } = req.body;
+
+  if (!email || !amount) {
+    return res.status(400).json({ error: "Missing mining data" });
+  }
+
+  const user = users.find(u => u.email === email);
+
+  if (!user) {
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  user.totalCoins += amount;
+
+  miningLogs.push({
+    email,
+    amount,
+    date: new Date().toISOString()
+  });
+
+  res.json({
+    message: "Mining successful",
+    totalCoins: user.totalCoins
+  });
+});
+
+// =========================
 // WITHDRAW
 // =========================
 app.post("/api/withdraw", (req, res) => {
   const { email, amount } = req.body;
 
+  const user = users.find(u => u.email === email);
+
+  if (!user) {
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  if (user.totalCoins < amount) {
+    return res.status(400).json({ error: "Insufficient balance" });
+  }
+
+  user.totalCoins -= amount;
+
   withdrawals.push({
     email,
     amount,
+    status: "pending",
     date: new Date().toISOString()
   });
 
@@ -112,13 +160,20 @@ app.post("/api/withdraw", (req, res) => {
 // =========================
 // ADMIN
 // =========================
-app.get("/admin/users", (req, res) => {
+app.get("/api/admin/users", (req, res) => {
   res.json(users);
 });
 
-app.get("/admin/withdrawals", (req, res) => {
+app.get("/api/admin/withdrawals", (req, res) => {
   res.json(withdrawals);
 });
 
+app.get("/api/admin/mining", (req, res) => {
+  res.json(miningLogs);
+});
+
+// =========================
+// START SERVER
+// =========================
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log("Backend running on port " + PORT));
