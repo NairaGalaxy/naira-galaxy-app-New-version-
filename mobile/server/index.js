@@ -107,34 +107,11 @@ app.get("/api/mine", (req, res) => {
 
   const today = new Date().toISOString().split("T")[0];
 
-  const log = miningLogs.find(
-    l => l.email === user.email && l.date === today
-  );
-
-  res.json({
-    minedButtons: log?.buttons || [],
-    todayTotal: log?.total || 0,
-    dailyLimit: DAILY_LIMIT
-  });
-});
-
-// POST mine (SECURE)
-app.post("/api/mine", (req, res) => {
-  const user = getUserFromToken(req);
-  const { buttonIndex } = req.body;
-
-  if (!user) return res.status(401).json({ error: "Unauthorized" });
-
-  if (buttonIndex === undefined) {
-    return res.status(400).json({ error: "Missing button index" });
-  }
-
-  const today = new Date().toISOString().split("T")[0];
-
   let log = miningLogs.find(
     l => l.email === user.email && l.date === today
   );
 
+  // ✅ Ensure fresh daily log
   if (!log) {
     log = {
       email: user.email,
@@ -145,20 +122,64 @@ app.post("/api/mine", (req, res) => {
     miningLogs.push(log);
   }
 
-  if (log.buttons.includes(buttonIndex)) {
-    return res.status(400).json({ error: "Already mined" });
+  res.json({
+    minedButtons: log.buttons,
+    todayTotal: log.total,
+    dailyLimit: DAILY_LIMIT
+  });
+});
+
+// POST mine (FULLY LOCKED)
+app.post("/api/mine", (req, res) => {
+  const user = getUserFromToken(req);
+  const { buttonId } = req.body;
+
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  // ✅ STRICT VALIDATION
+  if (
+    buttonId === undefined ||
+    typeof buttonId !== "number" ||
+    buttonId < 0 ||
+    buttonId >= MAX_BUTTONS_PER_DAY
+  ) {
+    return res.status(400).json({ error: "Invalid button" });
   }
 
+  const today = new Date().toISOString().split("T")[0];
+
+  let log = miningLogs.find(
+    l => l.email === user.email && l.date === today
+  );
+
+  // ✅ CREATE DAILY LOG
+  if (!log) {
+    log = {
+      email: user.email,
+      date: today,
+      buttons: [],
+      total: 0,
+    };
+    miningLogs.push(log);
+  }
+
+  // ❌ BLOCK DUPLICATE BUTTON
+  if (log.buttons.includes(buttonId)) {
+    return res.status(400).json({ error: "Button already mined" });
+  }
+
+  // ❌ DAILY LIMIT
   if (log.buttons.length >= MAX_BUTTONS_PER_DAY) {
     return res.status(400).json({ error: "Daily limit reached" });
   }
 
-  log.buttons.push(buttonIndex);
+  // ✅ APPLY MINING
+  log.buttons.push(buttonId);
   log.total += COINS_PER_BUTTON;
-
   user.totalCoins += COINS_PER_BUTTON;
 
   res.json({
+    message: "Mining successful",
     earned: COINS_PER_BUTTON,
     totalCoins: user.totalCoins,
     minedButtons: log.buttons,
