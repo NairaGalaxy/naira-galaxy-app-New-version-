@@ -1,9 +1,24 @@
 const express = require("express");
 const cors = require("cors");
+const jwt = require("jsonwebtoken");
+const bcrypt = require("bcryptjs");
+const rateLimit = require("express-rate-limit");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// =========================
+// 🔐 CONFIG
+// =========================
+const JWT_SECRET = "SUPER_SECRET_KEY"; // ⚠️ change in production
+
+// Rate limiter (anti-spam)
+const limiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+});
+app.use("/api/", limiter);
 
 // =========================
 // TEMP DATABASE
@@ -20,10 +35,14 @@ const MAX_BUTTONS_PER_DAY = 20;
 const DAILY_LIMIT = COINS_PER_BUTTON * MAX_BUTTONS_PER_DAY;
 
 // =========================
-// TOKEN HELPERS
+// 🔐 AUTH HELPERS
 // =========================
 function generateToken(user) {
-  return Buffer.from(user.email).toString("base64");
+  return jwt.sign(
+    { id: user.id, email: user.email },
+    JWT_SECRET,
+    { expiresIn: "7d" }
+  );
 }
 
 function getUserFromToken(req) {
@@ -31,15 +50,19 @@ function getUserFromToken(req) {
   if (!auth) return null;
 
   const token = auth.split(" ")[1];
-  const email = Buffer.from(token, "base64").toString("ascii");
 
-  return users.find(u => u.email === email);
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    return users.find(u => u.id === decoded.id);
+  } catch {
+    return null;
+  }
 }
 
 // =========================
-// AUTH
+// AUTH - REGISTER
 // =========================
-app.post("/api/auth/register", (req, res) => {
+app.post("/api/auth/register", async (req, res) => {
   const { username, email, password, fullName } = req.body;
 
   if (!email || !password) {
@@ -50,11 +73,13 @@ app.post("/api/auth/register", (req, res) => {
     return res.status(400).json({ error: "User already exists" });
   }
 
+  const hashedPassword = await bcrypt.hash(password, 10);
+
   const newUser = {
     id: Date.now(),
     username,
     email,
-    password,
+    password: hashedPassword,
     fullName,
     isAdmin: false,
     totalCoins: 0,
@@ -65,27 +90,37 @@ app.post("/api/auth/register", (req, res) => {
 
   res.json({
     token: generateToken(newUser),
-    user: newUser
+    user: { ...newUser, password: undefined }
   });
 });
 
-app.post("/api/auth/login", (req, res) => {
+// =========================
+// AUTH - LOGIN
+// =========================
+app.post("/api/auth/login", async (req, res) => {
   const { email, password } = req.body;
 
-  const user = users.find(
-    u => u.email === email && u.password === password
-  );
+  const user = users.find(u => u.email === email);
 
   if (!user) {
     return res.status(401).json({ error: "Invalid credentials" });
   }
 
+  const isMatch = await bcrypt.compare(password, user.password);
+
+  if (!isMatch) {
+    return res.status(401).json({ error: "Invalid credentials" });
+  }
+
   res.json({
     token: generateToken(user),
-    user
+    user: { ...user, password: undefined }
   });
 });
 
+// =========================
+// AUTH - PROFILE
+// =========================
 app.get("/api/auth/profile", (req, res) => {
   const user = getUserFromToken(req);
 
@@ -93,7 +128,7 @@ app.get("/api/auth/profile", (req, res) => {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  res.json(user);
+  res.json({ ...user, password: undefined });
 });
 
 // =========================
@@ -111,7 +146,6 @@ app.get("/api/mine", (req, res) => {
     l => l.email === user.email && l.date === today
   );
 
-  // ✅ Ensure fresh daily log
   if (!log) {
     log = {
       email: user.email,
@@ -129,21 +163,15 @@ app.get("/api/mine", (req, res) => {
   });
 });
 
-// POST mine (FULLY LOCKED)
+// POST mine
 app.post("/api/mine", (req, res) => {
   const user = getUserFromToken(req);
-  const { buttonId } = req.body;
+  const { buttonIndex } = req.body;
 
   if (!user) return res.status(401).json({ error: "Unauthorized" });
 
-  // ✅ STRICT VALIDATION
-  if (
-    buttonId === undefined ||
-    typeof buttonId !== "number" ||
-    buttonId < 0 ||
-    buttonId >= MAX_BUTTONS_PER_DAY
-  ) {
-    return res.status(400).json({ error: "Invalid button" });
+  if (buttonIndex === undefined) {
+    return res.status(400).json({ error: "Missing button index" });
   }
 
   const today = new Date().toISOString().split("T")[0];
@@ -152,7 +180,6 @@ app.post("/api/mine", (req, res) => {
     l => l.email === user.email && l.date === today
   );
 
-  // ✅ CREATE DAILY LOG
   if (!log) {
     log = {
       email: user.email,
@@ -163,23 +190,20 @@ app.post("/api/mine", (req, res) => {
     miningLogs.push(log);
   }
 
-  // ❌ BLOCK DUPLICATE BUTTON
-  if (log.buttons.includes(buttonId)) {
-    return res.status(400).json({ error: "Button already mined" });
+  if (log.buttons.includes(buttonIndex)) {
+    return res.status(400).json({ error: "Already mined" });
   }
 
-  // ❌ DAILY LIMIT
   if (log.buttons.length >= MAX_BUTTONS_PER_DAY) {
     return res.status(400).json({ error: "Daily limit reached" });
   }
 
-  // ✅ APPLY MINING
-  log.buttons.push(buttonId);
+  log.buttons.push(buttonIndex);
   log.total += COINS_PER_BUTTON;
+
   user.totalCoins += COINS_PER_BUTTON;
 
   res.json({
-    message: "Mining successful",
     earned: COINS_PER_BUTTON,
     totalCoins: user.totalCoins,
     minedButtons: log.buttons,
@@ -254,7 +278,7 @@ app.post("/api/wallet/withdraw", (req, res) => {
 // ADMIN
 // =========================
 app.get("/api/admin/users", (req, res) => {
-  res.json(users);
+  res.json(users.map(u => ({ ...u, password: undefined })));
 });
 
 app.get("/api/admin/withdrawals", (req, res) => {
@@ -287,6 +311,7 @@ app.get("/api/admin/mining", (req, res) => {
 // START SERVER
 // =========================
 const PORT = process.env.PORT || 10000;
+
 app.listen(PORT, () =>
-  console.log("Backend running on port " + PORT)
+  console.log("🚀 Secure backend running on port " + PORT)
 );
