@@ -13,6 +13,13 @@ let withdrawals = [];
 let miningLogs = [];
 
 // =========================
+// CONSTANTS
+// =========================
+const COINS_PER_BUTTON = 50;
+const MAX_BUTTONS_PER_DAY = 20;
+const DAILY_LIMIT = COINS_PER_BUTTON * MAX_BUTTONS_PER_DAY;
+
+// =========================
 // TOKEN HELPERS
 // =========================
 function generateToken(user) {
@@ -30,7 +37,7 @@ function getUserFromToken(req) {
 }
 
 // =========================
-// AUTH - REGISTER
+// AUTH
 // =========================
 app.post("/api/auth/register", (req, res) => {
   const { username, email, password, fullName } = req.body;
@@ -62,9 +69,6 @@ app.post("/api/auth/register", (req, res) => {
   });
 });
 
-// =========================
-// AUTH - LOGIN
-// =========================
 app.post("/api/auth/login", (req, res) => {
   const { email, password } = req.body;
 
@@ -82,9 +86,6 @@ app.post("/api/auth/login", (req, res) => {
   });
 });
 
-// =========================
-// AUTH - PROFILE
-// =========================
 app.get("/api/auth/profile", (req, res) => {
   const user = getUserFromToken(req);
 
@@ -96,43 +97,81 @@ app.get("/api/auth/profile", (req, res) => {
 });
 
 // =========================
-// MINE COINS
+// 🔐 SECURE MINING SYSTEM
 // =========================
-app.post("/api/mine", (req, res) => {
+
+// GET mining status
+app.get("/api/mine", (req, res) => {
   const user = getUserFromToken(req);
-  const { amount } = req.body;
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
 
-  if (!user) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
+  const today = new Date().toISOString().split("T")[0];
 
-  if (!amount) {
-    return res.status(400).json({ error: "Missing amount" });
-  }
-
-  user.totalCoins += amount;
-
-  miningLogs.push({
-    email: user.email,
-    amount,
-    date: new Date().toISOString()
-  });
+  const log = miningLogs.find(
+    l => l.email === user.email && l.date === today
+  );
 
   res.json({
-    message: "Mining successful",
-    totalCoins: user.totalCoins
+    minedButtons: log?.buttons || [],
+    todayTotal: log?.total || 0,
+    dailyLimit: DAILY_LIMIT
+  });
+});
+
+// POST mine (SECURE)
+app.post("/api/mine", (req, res) => {
+  const user = getUserFromToken(req);
+  const { buttonIndex } = req.body;
+
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  if (buttonIndex === undefined) {
+    return res.status(400).json({ error: "Missing button index" });
+  }
+
+  const today = new Date().toISOString().split("T")[0];
+
+  let log = miningLogs.find(
+    l => l.email === user.email && l.date === today
+  );
+
+  if (!log) {
+    log = {
+      email: user.email,
+      date: today,
+      buttons: [],
+      total: 0,
+    };
+    miningLogs.push(log);
+  }
+
+  if (log.buttons.includes(buttonIndex)) {
+    return res.status(400).json({ error: "Already mined" });
+  }
+
+  if (log.buttons.length >= MAX_BUTTONS_PER_DAY) {
+    return res.status(400).json({ error: "Daily limit reached" });
+  }
+
+  log.buttons.push(buttonIndex);
+  log.total += COINS_PER_BUTTON;
+
+  user.totalCoins += COINS_PER_BUTTON;
+
+  res.json({
+    earned: COINS_PER_BUTTON,
+    totalCoins: user.totalCoins,
+    minedButtons: log.buttons,
+    todayTotal: log.total,
   });
 });
 
 // =========================
-// WALLET - BALANCE
+// WALLET
 // =========================
 app.get("/api/wallet/balance", (req, res) => {
   const user = getUserFromToken(req);
-
-  if (!user) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
 
   const pending = withdrawals
     .filter(w => w.email === user.email && w.status === "pending")
@@ -145,33 +184,18 @@ app.get("/api/wallet/balance", (req, res) => {
   });
 });
 
-// =========================
-// WALLET - HISTORY
-// =========================
 app.get("/api/wallet/withdrawals", (req, res) => {
   const user = getUserFromToken(req);
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
 
-  if (!user) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-
-  const userWithdrawals = withdrawals.filter(
-    w => w.email === user.email
-  );
-
-  res.json(userWithdrawals);
+  res.json(withdrawals.filter(w => w.email === user.email));
 });
 
-// =========================
-// WALLET - WITHDRAW
-// =========================
 app.post("/api/wallet/withdraw", (req, res) => {
   const user = getUserFromToken(req);
   const { amount, bankName, accountNumber, accountName } = req.body;
 
-  if (!user) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
 
   if (!amount || amount <= 0) {
     return res.status(400).json({ error: "Invalid amount" });
@@ -206,22 +230,16 @@ app.post("/api/wallet/withdraw", (req, res) => {
 });
 
 // =========================
-// ADMIN - USERS
+// ADMIN
 // =========================
 app.get("/api/admin/users", (req, res) => {
   res.json(users);
 });
 
-// =========================
-// ADMIN - WITHDRAWALS
-// =========================
 app.get("/api/admin/withdrawals", (req, res) => {
   res.json(withdrawals);
 });
 
-// =========================
-// ADMIN - UPDATE STATUS ✅ FIXED
-// =========================
 app.patch("/api/admin/withdrawals/:id/status", (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
@@ -240,9 +258,6 @@ app.patch("/api/admin/withdrawals/:id/status", (req, res) => {
   });
 });
 
-// =========================
-// ADMIN - MINING LOGS
-// =========================
 app.get("/api/admin/mining", (req, res) => {
   res.json(miningLogs);
 });
