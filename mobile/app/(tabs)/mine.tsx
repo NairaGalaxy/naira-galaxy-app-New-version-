@@ -8,7 +8,7 @@ import {
   Animated,
   Platform,
   Modal,
-  RefreshControl, // ✅ ADDED
+  RefreshControl,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -18,21 +18,23 @@ import { useMining } from "@/context/MiningContext";
 import { AdModal } from "@/components/AdModal";
 import Colors from "@/constants/colors";
 
+const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}`; // ✅ ADDED
+
 const TOTAL_BUTTONS = 20;
 const COINS_PER_BUTTON = 50;
 const INTERSTITIAL_INTERVAL_MS = 60 * 1000;
 
 const BUTTON_LABELS = [
-  "Gold Rush", "Silver Strike", "Diamond Dig", "Crystal Cave",
-  "Ruby Mine", "Emerald Pit", "Sapphire Shaft", "Topaz Tunnel",
-  "Pearl Drop", "Opal Well", "Jade Lode", "Amber Vein",
-  "Quartz Drill", "Onyx Shaft", "Garnet Hole", "Citrine Core",
-  "Agate Pocket", "Bronze Pit", "Cobalt Mine", "Platinum Seam",
+  "Gold Rush","Silver Strike","Diamond Dig","Crystal Cave",
+  "Ruby Mine","Emerald Pit","Sapphire Shaft","Topaz Tunnel",
+  "Pearl Drop","Opal Well","Jade Lode","Amber Vein",
+  "Quartz Drill","Onyx Shaft","Garnet Hole","Citrine Core",
+  "Agate Pocket","Bronze Pit","Cobalt Mine","Platinum Seam",
 ];
 
 export default function MineScreen() {
-  const { user, updateUserCoins } = useAuth();
-  const { minedButtons, coinsEarnedToday, dailyLimit, canMineMore, completeMining, refreshMining } = useMining();
+  const { user, token, updateUserCoins } = useAuth(); // ✅ TOKEN ADDED
+  const { minedButtons, coinsEarnedToday, dailyLimit, canMineMore, refreshMining } = useMining();
   const insets = useSafeAreaInsets();
 
   const [activeButton, setActiveButton] = useState<number | null>(null);
@@ -40,8 +42,7 @@ export default function MineScreen() {
   const [showInterstitial, setShowInterstitial] = useState(false);
   const [showCoinPop, setShowCoinPop] = useState(false);
   const [lastEarned, setLastEarned] = useState(0);
-
-  const [refreshing, setRefreshing] = useState(false); // ✅ ADDED
+  const [refreshing, setRefreshing] = useState(false);
 
   const interstitialTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const coinPopAnim = useRef(new Animated.Value(0)).current;
@@ -55,7 +56,6 @@ export default function MineScreen() {
     };
   }, []);
 
-  // ✅ REFRESH FUNCTION
   const onRefresh = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setRefreshing(true);
@@ -89,18 +89,45 @@ export default function MineScreen() {
     setShowRewardedAd(true);
   };
 
+  // ✅ SECURE BACKEND MINING
   const handleAdComplete = async () => {
     setShowRewardedAd(false);
     if (activeButton === null) return;
+
     try {
-      const earned = await completeMining(activeButton);
+      const res = await fetch(`${API_BASE}/api/mine`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`, // 🔐 IMPORTANT
+        },
+        body: JSON.stringify({
+          amount: COINS_PER_BUTTON,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Mining failed");
+      }
+
+      const earned = COINS_PER_BUTTON;
       setLastEarned(earned);
+
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      if (user) updateUserCoins((user.totalCoins ?? 0) + earned);
+
+      if (user) {
+        updateUserCoins(data.totalCoins); // ✅ SERVER VALUE
+      }
+
       showCoinAnimation();
+
     } catch (err: any) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      console.log(err.message);
     }
+
     setActiveButton(null);
   };
 
@@ -163,7 +190,6 @@ export default function MineScreen() {
         </View>
       )}
 
-      {/* ✅ UPDATED SCROLLVIEW */}
       <ScrollView
         style={styles.grid}
         contentContainerStyle={styles.gridContent}
@@ -180,6 +206,7 @@ export default function MineScreen() {
           {Array.from({ length: TOTAL_BUTTONS }).map((_, index) => {
             const mined = minedButtons.includes(index);
             const isActive = activeButton === index;
+
             return (
               <Pressable
                 key={index}
@@ -201,9 +228,7 @@ export default function MineScreen() {
                   <Text style={[styles.mineBtnLabel, mined && styles.mineBtnLabelMined]}>
                     {BUTTON_LABELS[index]}
                   </Text>
-                  {!mined && (
-                    <Text style={styles.mineBtnCoins}>+{COINS_PER_BUTTON} ₦</Text>
-                  )}
+                  {!mined && <Text style={styles.mineBtnCoins}>+{COINS_PER_BUTTON} ₦</Text>}
                   {mined && <Text style={styles.mineBtnDone}>Mined!</Text>}
                 </View>
               </Pressable>
@@ -211,8 +236,6 @@ export default function MineScreen() {
           })}
         </View>
       </ScrollView>
-
-      {/* Coin animation + Ads remain unchanged */}
     </View>
   );
-}
+        }
