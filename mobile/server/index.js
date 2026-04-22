@@ -13,7 +13,7 @@ let withdrawals = [];
 let miningLogs = [];
 
 // =========================
-// SIMPLE TOKEN
+// TOKEN HELPERS
 // =========================
 function generateToken(user) {
   return Buffer.from(user.email).toString("base64");
@@ -35,8 +35,8 @@ function getUserFromToken(req) {
 app.post("/api/auth/register", (req, res) => {
   const { username, email, password, fullName } = req.body;
 
-  if (!username || !email || !password || !fullName) {
-    return res.status(400).json({ error: "All fields are required" });
+  if (!email || !password) {
+    return res.status(400).json({ error: "Missing fields" });
   }
 
   if (users.find(u => u.email === email)) {
@@ -96,27 +96,18 @@ app.get("/api/auth/profile", (req, res) => {
 });
 
 // =========================
-// MINE COINS (LIMITED)
+// MINE COINS
 // =========================
 app.post("/api/mine", (req, res) => {
   const user = getUserFromToken(req);
   const { amount } = req.body;
 
-  if (!user) return res.status(401).json({ error: "Unauthorized" });
-
-  if (!amount || amount <= 0) {
-    return res.status(400).json({ error: "Invalid amount" });
+  if (!user) {
+    return res.status(401).json({ error: "Unauthorized" });
   }
 
-  // DAILY LIMIT (1000 coins)
-  const today = new Date().toDateString();
-
-  const minedToday = miningLogs
-    .filter(log => log.email === user.email && new Date(log.date).toDateString() === today)
-    .reduce((sum, log) => sum + log.amount, 0);
-
-  if (minedToday + amount > 1000) {
-    return res.status(400).json({ error: "Daily mining limit reached" });
+  if (!amount) {
+    return res.status(400).json({ error: "Missing amount" });
   }
 
   user.totalCoins += amount;
@@ -139,7 +130,9 @@ app.post("/api/mine", (req, res) => {
 app.get("/api/wallet/balance", (req, res) => {
   const user = getUserFromToken(req);
 
-  if (!user) return res.status(401).json({ error: "Unauthorized" });
+  if (!user) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
 
   const pending = withdrawals
     .filter(w => w.email === user.email && w.status === "pending")
@@ -158,14 +151,13 @@ app.get("/api/wallet/balance", (req, res) => {
 app.get("/api/wallet/withdrawals", (req, res) => {
   const user = getUserFromToken(req);
 
-  if (!user) return res.status(401).json({ error: "Unauthorized" });
+  if (!user) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
 
-  const userWithdrawals = withdrawals
-    .filter(w => w.email === user.email)
-    .map(w => ({
-      ...w,
-      createdAt: w.createdAt || w.date // ensure compatibility
-    }));
+  const userWithdrawals = withdrawals.filter(
+    w => w.email === user.email
+  );
 
   res.json(userWithdrawals);
 });
@@ -177,14 +169,12 @@ app.post("/api/wallet/withdraw", (req, res) => {
   const user = getUserFromToken(req);
   const { amount, bankName, accountNumber, accountName } = req.body;
 
-  if (!user) return res.status(401).json({ error: "Unauthorized" });
+  if (!user) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
 
   if (!amount || amount <= 0) {
     return res.status(400).json({ error: "Invalid amount" });
-  }
-
-  if (!bankName || !accountNumber || !accountName) {
-    return res.status(400).json({ error: "Bank details required" });
   }
 
   if (user.totalCoins < amount) {
@@ -195,6 +185,9 @@ app.post("/api/wallet/withdraw", (req, res) => {
 
   const newWithdrawal = {
     id: Date.now(),
+    userId: user.id,
+    username: user.username,
+    fullName: user.fullName,
     email: user.email,
     amount,
     bankName,
@@ -213,29 +206,44 @@ app.post("/api/wallet/withdraw", (req, res) => {
 });
 
 // =========================
-// ADMIN (PROTECTED)
+// ADMIN - USERS
 // =========================
 app.get("/api/admin/users", (req, res) => {
-  const user = getUserFromToken(req);
-  if (!user || !user.isAdmin) {
-    return res.status(403).json({ error: "Forbidden" });
-  }
   res.json(users);
 });
 
+// =========================
+// ADMIN - WITHDRAWALS
+// =========================
 app.get("/api/admin/withdrawals", (req, res) => {
-  const user = getUserFromToken(req);
-  if (!user || !user.isAdmin) {
-    return res.status(403).json({ error: "Forbidden" });
-  }
   res.json(withdrawals);
 });
 
-app.get("/api/admin/mining", (req, res) => {
-  const user = getUserFromToken(req);
-  if (!user || !user.isAdmin) {
-    return res.status(403).json({ error: "Forbidden" });
+// =========================
+// ADMIN - UPDATE STATUS ✅ FIXED
+// =========================
+app.patch("/api/admin/withdrawals/:id/status", (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  const withdrawal = withdrawals.find(w => w.id == id);
+
+  if (!withdrawal) {
+    return res.status(404).json({ error: "Withdrawal not found" });
   }
+
+  withdrawal.status = status;
+
+  res.json({
+    message: "Status updated",
+    withdrawal
+  });
+});
+
+// =========================
+// ADMIN - MINING LOGS
+// =========================
+app.get("/api/admin/mining", (req, res) => {
   res.json(miningLogs);
 });
 
@@ -243,4 +251,6 @@ app.get("/api/admin/mining", (req, res) => {
 // START SERVER
 // =========================
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log("Backend running on port " + PORT));
+app.listen(PORT, () =>
+  console.log("Backend running on port " + PORT)
+);
