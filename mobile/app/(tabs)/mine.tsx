@@ -17,11 +17,14 @@ import { useMining } from "@/context/MiningContext";
 import { AdModal } from "@/components/AdModal";
 import Colors from "@/constants/colors";
 
-const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}`; // ✅ FIXED
+// ✅ SAFE BASE URL (no crash if env missing)
+const API_BASE =
+  process.env.EXPO_PUBLIC_DOMAIN
+    ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
+    : "http://localhost:10000";
 
 const TOTAL_BUTTONS = 20;
 const COINS_PER_BUTTON = 50;
-const INTERSTITIAL_INTERVAL_MS = 60 * 1000;
 
 const BUTTON_LABELS = [
   "Gold Rush","Silver Strike","Diamond Dig","Crystal Cave",
@@ -33,7 +36,14 @@ const BUTTON_LABELS = [
 
 export default function MineScreen() {
   const { user, token, updateUserCoins } = useAuth();
-  const { minedButtons, coinsEarnedToday, dailyLimit, canMineMore, refreshMining } = useMining();
+  const {
+    minedButtons,
+    coinsEarnedToday,
+    dailyLimit,
+    canMineMore,
+    refreshMining,
+  } = useMining();
+
   const insets = useSafeAreaInsets();
 
   const [activeButton, setActiveButton] = useState<number | null>(null);
@@ -42,15 +52,11 @@ export default function MineScreen() {
   const [lastEarned, setLastEarned] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
 
-  const interstitialTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const coinPopAnim = useRef(new Animated.Value(0)).current;
   const coinScaleAnim = useRef(new Animated.Value(0.5)).current;
 
   useEffect(() => {
     refreshMining();
-    return () => {
-      if (interstitialTimer.current) clearTimeout(interstitialTimer.current);
-    };
   }, []);
 
   const onRefresh = async () => {
@@ -76,10 +82,15 @@ export default function MineScreen() {
     setShowRewardedAd(true);
   };
 
-  // ✅ SECURE BACKEND MINING (FINAL FIX)
+  // ✅ FINAL SECURE BACKEND MINING
   const handleAdComplete = async () => {
     setShowRewardedAd(false);
+
     if (activeButton === null) return;
+    if (!token) {
+      console.log("No auth token");
+      return;
+    }
 
     try {
       const res = await fetch(`${API_BASE}/api/mine`, {
@@ -89,7 +100,7 @@ export default function MineScreen() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          buttonIndex: activeButton, // ✅ CORRECT
+          buttonIndex: activeButton, // ✅ MATCHES BACKEND
         }),
       });
 
@@ -99,8 +110,7 @@ export default function MineScreen() {
         throw new Error(data.error || "Mining failed");
       }
 
-      const earned = data.earned;
-      setLastEarned(earned);
+      setLastEarned(data.earned);
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
@@ -115,7 +125,7 @@ export default function MineScreen() {
 
     } catch (err: any) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      console.log(err.message);
+      console.log("Mining error:", err.message);
     }
 
     setActiveButton(null);
@@ -155,8 +165,12 @@ export default function MineScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.greeting}>Hello, {user?.username ?? "Miner"} 👋</Text>
-          <Text style={styles.subtitle}>Tap to mine your daily Naira coins</Text>
+          <Text style={styles.greeting}>
+            Hello, {user?.username ?? "Miner"} 👋
+          </Text>
+          <Text style={styles.subtitle}>
+            Tap to mine your daily Naira coins
+          </Text>
         </View>
 
         <View style={styles.coinBadge}>
@@ -194,7 +208,7 @@ export default function MineScreen() {
         </View>
       )}
 
-      {/* Scroll */}
+      {/* GRID */}
       <ScrollView
         style={styles.grid}
         contentContainerStyle={styles.gridContent}
@@ -234,7 +248,9 @@ export default function MineScreen() {
                   </Text>
 
                   {!mined && (
-                    <Text style={styles.mineBtnCoins}>+{COINS_PER_BUTTON} ₦</Text>
+                    <Text style={styles.mineBtnCoins}>
+                      +{COINS_PER_BUTTON} ₦
+                    </Text>
                   )}
 
                   {mined && (
@@ -247,7 +263,7 @@ export default function MineScreen() {
         </View>
       </ScrollView>
 
-      {/* Rewarded Ad */}
+      {/* Ad */}
       <AdModal
         visible={showRewardedAd}
         onComplete={handleAdComplete}
@@ -283,32 +299,3 @@ export default function MineScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  header: { flexDirection: "row", justifyContent: "space-between", padding: 20 },
-  greeting: { fontSize: 18, color: Colors.text },
-  subtitle: { fontSize: 12, color: Colors.textSecondary },
-  coinBadge: { flexDirection: "row", gap: 4 },
-  coinBadgeSymbol: { color: Colors.gold },
-  coinBadgeAmount: { color: Colors.gold },
-  progressSection: { paddingHorizontal: 20 },
-  progressHeader: { flexDirection: "row", justifyContent: "space-between" },
-  progressBg: { height: 8, backgroundColor: "#222", borderRadius: 4 },
-  progressFill: { height: "100%", backgroundColor: Colors.gold },
-  progressButtons: { fontSize: 11, color: "#aaa" },
-  limitBanner: { padding: 10 },
-  limitBannerText: { color: Colors.success },
-  grid: { flex: 1 },
-  gridContent: { padding: 16 },
-  buttonGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  mineBtn: { width: "47%", padding: 14, borderRadius: 12, backgroundColor: "#111" },
-  mineBtnMined: { opacity: 0.5 },
-  mineBtnDisabled: { opacity: 0.4 },
-  mineBtnPressed: { opacity: 0.7 },
-  mineBtnContent: { alignItems: "center" },
-  mineBtnLabel: { color: "#fff" },
-  mineBtnLabelMined: { color: "#aaa" },
-  mineBtnCoins: { color: Colors.gold },
-  mineBtnDone: { color: Colors.success },
-});
