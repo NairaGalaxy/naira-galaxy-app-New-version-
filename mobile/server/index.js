@@ -11,7 +11,7 @@ app.use(express.json());
 // =========================
 // 🔐 CONFIG
 // =========================
-const JWT_SECRET = process.env.JWT_SECRET; // ⚠️ change in production
+const JWT_SECRET = process.env.JWT_SECRET || "dev_secret_key"; // ✅ SAFE FALLBACK
 
 // Rate limiter (anti-spam)
 const limiter = rateLimit({
@@ -53,7 +53,9 @@ function getUserFromToken(req) {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    return users.find(u => u.id === decoded.id);
+    const user = users.find(u => u.id === decoded.id);
+    if (!user) return null;
+    return user;
   } catch {
     return null;
   }
@@ -198,9 +200,10 @@ app.post("/api/mine", (req, res) => {
     return res.status(400).json({ error: "Daily limit reached" });
   }
 
+  console.log("User mining:", user.email, "Button:", buttonIndex); // ✅ debug
+
   log.buttons.push(buttonIndex);
   log.total += COINS_PER_BUTTON;
-
   user.totalCoins += COINS_PER_BUTTON;
 
   res.json({
