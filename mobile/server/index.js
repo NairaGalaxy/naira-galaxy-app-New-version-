@@ -11,7 +11,7 @@ app.use(express.json());
 // =========================
 // 🔐 CONFIG
 // =========================
-const JWT_SECRET = "SUPER_SECRET_KEY"; // ⚠️ change in production
+const JWT_SECRET = process.env.JWT_SECRET; // ⚠️ change in production
 
 // Rate limiter (anti-spam)
 const limiter = rateLimit({
